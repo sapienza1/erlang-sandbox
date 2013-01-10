@@ -79,7 +79,6 @@ safe_application(Node, User) ->
                               erl_syntax:atom(Function),
                               Args);
                         false ->
-                            erlang:display(Node),
                             sandbox:restricted_msg()
                     end;
                 _Arity ->
