@@ -61,7 +61,7 @@ safe_application(Node, User) ->
                               erl_syntax:atom(Function),
                               Args);
                         false ->
-                            NewArgs = [erl_syntax:atom(User),erl_syntax:atom(Module),erl_syntax:atom(Function),Args],
+                            NewArgs = [erl_syntax:atom(User),erl_syntax:atom(Module),erl_syntax:atom(Function),erl_syntax:list(Args)],
                             erl_syntax:application(erl_syntax:atom(security_manager), erl_syntax:atom(check), NewArgs)
                     end;
                 {FakeFunction, _Arity} ->
@@ -79,6 +79,7 @@ safe_application(Node, User) ->
                               erl_syntax:atom(Function),
                               Args);
                         false ->
+                            erlang:display(Node),
                             sandbox:restricted_msg()
                     end;
                 _Arity ->
