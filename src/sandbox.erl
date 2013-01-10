@@ -1,6 +1,6 @@
 -module(sandbox).
 
--export([eval/1, eval/2]).
+-export([eval/2, eval/3]).
 
 -export([restricted_msg/0]).
 
@@ -10,13 +10,13 @@
 
 -define(ATOM_PREFIX, "axwlefhubay_").
 
-eval(E) ->
-    eval(E, []).
+eval(E,User) ->
+    eval(E, [],User).
 
-eval(E, Bs) ->
+eval(E, Bs,User) ->
     {ok, Tokens, _} = erl_scan:string(E),
     {ok, Exprs} = erl_parse:parse_exprs(Tokens),
-    SafeExprs = safe_exprs(Exprs),
+    SafeExprs = safe_exprs(Exprs,User),
     {value, Value, NBs} = erl_eval:exprs(SafeExprs, Bs, {eval, fun lh/3}, {value, fun nlh/2}),
     {erl_syntax:concrete(restore_exprs(erl_syntax:abstract(Value))),
      erl_syntax:concrete(restore_exprs(erl_syntax:abstract(NBs)))}.
@@ -39,7 +39,7 @@ nlh({M, F}, Args) ->
 nlh(_F, _Args) ->
     sandbox:restricted_msg().
 
-safe_application(Node) ->
+safe_application(Node, User) ->
     case erl_syntax:type(Node) of
         application ->
             case erl_syntax_lib:analyze_application(Node) of
@@ -61,7 +61,8 @@ safe_application(Node) ->
                               erl_syntax:atom(Function),
                               Args);
                         false ->
-                            sandbox:restricted_msg()
+                            NewArgs = [erl_syntax:atom(User),erl_syntax:atom(Module),erl_syntax:atom(Function),Args],
+                            erl_syntax:application(erl_syntax:atom(security_manager), erl_syntax:atom(check), NewArgs)
                     end;
                 {FakeFunction, _Arity} ->
                     ?ATOM_PREFIX ++ RealFunction = atom_to_list(FakeFunction),
@@ -78,6 +79,7 @@ safe_application(Node) ->
                               erl_syntax:atom(Function),
                               Args);
                         false ->
+                            erlang:display(Node),
                             sandbox:restricted_msg()
                     end;
                 _Arity ->
@@ -160,8 +162,8 @@ restore_atoms(Node) ->
             Node
     end.
 
-safe_exprs(Exprs) ->
-    revert(safe_expr(Exprs)).
+safe_exprs(Exprs,User) ->
+    revert(safe_expr(Exprs,User)).
 
 restore_exprs(Exprs) ->
     revert(restore_expr(Exprs)).
@@ -171,10 +173,10 @@ revert(Tree) when is_list(Tree) ->
 revert(Tree) ->
     erl_syntax:revert(Tree).
 
-safe_expr(Exprs) when is_list(Exprs) ->
-    [safe_expr(Expr) || Expr <- Exprs];
-safe_expr(Expr) ->
-    postorder(fun safe_application/1,
+safe_expr(Exprs,User) when is_list(Exprs) ->
+    [safe_expr(Expr,User) || Expr <- Exprs];
+safe_expr(Expr,User) ->
+    postorder(fun safe_application/2, User,
               postorder(fun replace_atoms/1, Expr)).
 
 restore_expr(Exprs) when is_list(Exprs) ->
@@ -193,5 +195,18 @@ postorder(F, Tree) ->
                                       || Group <- List])
       end).
 
+postorder(F, User, Tree) ->
+    F(case erl_syntax:subtrees(Tree) of
+          [] ->
+              Tree;
+          List ->
+              erl_syntax:update_tree(Tree,
+                                     [[postorder(F, User, Subtree)
+                                       || Subtree <- Group]
+                                      || Group <- List])
+      end,
+        User).
+
 restricted_msg() ->
     erlang:error(restricted).
+
